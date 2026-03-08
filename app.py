@@ -7,6 +7,10 @@ import ffmpeg
 import streamlit as st
 
 
+def ffmpeg_installed() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
 def process_video(input_video_path: str, output_video_path: str) -> None:
     temp_audio = str(Path(output_video_path).with_name("temp_audio.wav"))
     processed_audio = str(Path(output_video_path).with_name("processed_audio.wav"))
@@ -56,6 +60,15 @@ st.set_page_config(page_title="Video Audio Enhancer", page_icon="🎬", layout="
 st.title("Video Audio Enhancer")
 st.write("Upload a raw video, process it, and download the final output.")
 
+if not ffmpeg_installed():
+    st.error("FFmpeg executable not found on your system PATH.")
+    st.markdown(
+        "Install FFmpeg (system binary), then restart terminal/IDE and run app again.\n\n"
+        "Windows quick option:\n"
+        "- `winget install Gyan.FFmpeg`"
+    )
+    st.stop()
+
 uploaded_video = st.file_uploader(
     "Upload your raw video",
     type=["mp4", "mov", "mkv", "avi", "webm"],
@@ -91,6 +104,12 @@ if uploaded_video is not None:
             error_message = e.stderr.decode("utf-8", errors="ignore") if e.stderr else str(e)
             st.error("FFmpeg processing failed.")
             st.code(error_message)
+        except FileNotFoundError as e:
+            if "ffmpeg" in str(e).lower():
+                st.error("FFmpeg executable not found. Install FFmpeg and ensure it is in PATH.")
+                st.code("winget install Gyan.FFmpeg")
+            else:
+                st.error(f"File not found: {e}")
         except Exception as e:  # noqa: BLE001
             st.error(f"Unexpected error: {e}")
         finally:
