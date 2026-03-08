@@ -40,6 +40,16 @@ def resolve_ffmpeg_binary() -> Optional[str]:
             if candidate.is_file():
                 return str(candidate)
 
+    # Cloud-safe fallback: binary bundled by imageio-ffmpeg package.
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        bundled = imageio_ffmpeg.get_ffmpeg_exe()
+        if bundled and Path(bundled).is_file():
+            return str(bundled)
+    except Exception:
+        pass
+
     return None
 
 
@@ -100,6 +110,8 @@ if not FFMPEG_CMD:
         "Install FFmpeg (system binary), restart terminal/IDE, then run app again.\n\n"
         "Windows quick option:\n"
         "- `winget install Gyan.FFmpeg`\n\n"
+        "Streamlit Cloud option:\n"
+        "- add `imageio-ffmpeg` to `requirements.txt`\n\n"
         "Optional fallback:\n"
         "- set env var `FFMPEG_BINARY` to your `ffmpeg.exe` full path"
     )
