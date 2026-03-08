@@ -2,16 +2,48 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import ffmpeg
 import streamlit as st
 
 
-def ffmpeg_installed() -> bool:
-    return shutil.which("ffmpeg") is not None
+def resolve_ffmpeg_binary() -> Optional[str]:
+    env_candidates = [
+        os.getenv("FFMPEG_BINARY"),
+        os.getenv("FFMPEG_PATH"),
+    ]
+    for value in env_candidates:
+        if not value:
+            continue
+        candidate = Path(value).expanduser()
+        if candidate.is_file():
+            return str(candidate)
+        if candidate.is_dir():
+            exe = candidate / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+            if exe.is_file():
+                return str(exe)
+
+    from_path = shutil.which("ffmpeg")
+    if from_path:
+        return from_path
+
+    if os.name == "nt":
+        win_candidates = [
+            Path("C:/ffmpeg/bin/ffmpeg.exe"),
+            Path("C:/Program Files/ffmpeg/bin/ffmpeg.exe"),
+            Path("C:/Program Files (x86)/ffmpeg/bin/ffmpeg.exe"),
+            Path.home() / "scoop/shims/ffmpeg.exe",
+            Path.home() / "AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe",
+        ]
+        for candidate in win_candidates:
+            if candidate.is_file():
+                return str(candidate)
+
+    return None
 
 
-def process_video(input_video_path: str, output_video_path: str) -> None:
+def process_video(input_video_path: str, output_video_path: str, ffmpeg_cmd: str) -> None:
     temp_audio = str(Path(output_video_path).with_name("temp_audio.wav"))
     processed_audio = str(Path(output_video_path).with_name("processed_audio.wav"))
 
@@ -27,13 +59,13 @@ def process_video(input_video_path: str, output_video_path: str) -> None:
     (
         ffmpeg.input(input_video_path)
         .output(temp_audio, acodec="pcm_s16le", ac=2, ar="44100")
-        .run(overwrite_output=True)
+        .run(overwrite_output=True, cmd=ffmpeg_cmd)
     )
 
     (
         ffmpeg.input(temp_audio)
         .output(processed_audio, af=audio_filters)
-        .run(overwrite_output=True)
+        .run(overwrite_output=True, cmd=ffmpeg_cmd)
     )
 
     video_stream = ffmpeg.input(input_video_path)
@@ -47,7 +79,7 @@ def process_video(input_video_path: str, output_video_path: str) -> None:
             vcodec="copy",
             acodec="aac",
             strict="experimental",
-        ).run(overwrite_output=True)
+        ).run(overwrite_output=True, cmd=ffmpeg_cmd)
     )
 
     if os.path.exists(temp_audio):
@@ -56,16 +88,20 @@ def process_video(input_video_path: str, output_video_path: str) -> None:
         os.remove(processed_audio)
 
 
-st.set_page_config(page_title="Video Audio Enhancer", page_icon="🎬", layout="centered")
+FFMPEG_CMD = resolve_ffmpeg_binary()
+
+st.set_page_config(page_title="Video Audio Enhancer", page_icon=":clapper:", layout="centered")
 st.title("Video Audio Enhancer")
 st.write("Upload a raw video, process it, and download the final output.")
 
-if not ffmpeg_installed():
+if not FFMPEG_CMD:
     st.error("FFmpeg executable not found on your system PATH.")
     st.markdown(
-        "Install FFmpeg (system binary), then restart terminal/IDE and run app again.\n\n"
+        "Install FFmpeg (system binary), restart terminal/IDE, then run app again.\n\n"
         "Windows quick option:\n"
-        "- `winget install Gyan.FFmpeg`"
+        "- `winget install Gyan.FFmpeg`\n\n"
+        "Optional fallback:\n"
+        "- set env var `FFMPEG_BINARY` to your `ffmpeg.exe` full path"
     )
     st.stop()
 
@@ -88,7 +124,7 @@ if uploaded_video is not None:
                 f.write(uploaded_video.getbuffer())
 
             with st.spinner("Processing video. This may take a few minutes..."):
-                process_video(input_path, output_path)
+                process_video(input_path, output_path, FFMPEG_CMD)
 
             with open(output_path, "rb") as f:
                 output_bytes = f.read()
